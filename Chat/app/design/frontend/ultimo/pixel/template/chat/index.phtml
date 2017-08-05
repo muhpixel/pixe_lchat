@@ -1,0 +1,190 @@
+<?php
+$chatListArr = $online_users = array();
+$resource = Mage::getSingleton('core/resource');
+$readConnection = $resource->getConnection('core_read');
+$tableName = $resource->getTableName('chat');
+$session_username = isset($_SESSION['username']) ? $_SESSION['username'] : '';
+$sql = "SELECT * FROM $tableName WHERE (chat.to = '" . $session_username . "' OR chat.from = '" . $session_username . "') ORDER BY id DESC";
+$query = $readConnection->fetchAll($sql);
+$log_tableName = $resource->getTableName('chat_customer_log');
+$timeNow = strtotime(date('Y-m-d H:i:s'));
+
+$log_sql = "select customer,last_login from $log_tableName where customer!='" . $session_username . "' AND last_login > $timeNow -60";
+$log_query = $readConnection->fetchAll($log_sql);
+if (is_array($log_query) && count($log_query) > 0) {
+    foreach ($log_query as $log) {
+        $online_users[] = $log['customer'];
+    }
+}
+
+if (is_array($query) && count($query)) {
+    foreach ($query as $chat) {
+        if ($chat['to'] == $session_username) {
+            if (!key_exists($chat['from'], $chatListArr)) {
+                $chatListArr[$chat['from']] = array(
+                    'last_msg' => $chat['message'],
+                    'sent' => $chat['sent']
+                );
+            }
+        } else {
+            if (!key_exists($chat['to'], $chatListArr)) {
+                $chatListArr[$chat['to']] = array(
+                    'last_msg' => $chat['message'],
+                    'sent' => $chat['sent']
+                );
+            }
+        }
+    }
+}
+$currVisitorInfo = file_get_contents('http://ip-api.com/json/' . $_SERVER['REMOTE_ADDR']);
+$currVisitorInfoObject = json_decode($currVisitorInfo);
+$currVisitorTimezone = $currVisitorInfoObject->timezone;
+//$storeTimeZone = Mage::getStoreConfig('general/locale/timezone');
+$storeTimeZone = 'UTC';
+$date = new DateTime(date('Y-m-d H:i:s'), new DateTimeZone($storeTimeZone));
+//echo $date->format('Y-m-d H:i:s') . "<br>";
+$date->setTimezone(new DateTimeZone("UTC"));  //$currVisitorTimezone
+//echo $date->format('Y-m-d H:i:s') . "\n";
+
+
+
+
+?>
+
+
+<div class="my-account">
+    <div class="chat-inox">
+        <div class="page-title">
+            <h1>Inbox</h1>
+        </div>
+        <div class="grid-container" style="margin: 0 -1%;">
+            <div class="grid12-4 right">
+                <div class="chat-listing">
+                    <div class="chat-list-head clearfix">
+                        <h3>Chat</h3>
+                        <div class="search">
+                            <form action="#">
+                                <input type="text" class="animated-search" name="chat-search" placeholder="Search here..." autocomplete="on" />
+                            </form>
+                        </div>
+                    </div>
+                    <ul>
+                        <?php
+                        if (is_array($chatListArr) && count($chatListArr) > 0) {
+                            foreach ($chatListArr as $key => $value) {
+                                $active = (in_array($key, $online_users)) ? 'class="active"' : '';
+                                //$chatAvatar = $key->getCustomer();
+                                ?>
+                                <li <?php echo $active; ?>>
+                                    <a href="javascript:void(0);" class="chat-history" data-user="<?php echo $key; ?>" onclick="javascript:showChatHistoryof('<?php echo $key; ?>')">
+                                        <div class="chat-user">
+
+                                            <img src="https://www.pixelmarket.net/media/wysiwyg/default_chat_avatar.jpg" alt="" width="50" height="50" style="border-radius:50%;"/>
+                                            <em></em>
+                                        </div>
+                                        <div class="chat-desc">
+                                            <h4><?php echo $key ?></h4>
+                                            <p><?php echo substr($value['last_msg'], 0, 22); ?></p>
+                                        </div>
+                                    </a>
+                                </li>
+                                <?php
+                            }
+                        }
+                        ?>
+                    </ul>
+                </div>
+            </div>
+            <div class="grid12-8">
+                <div class="chat-box-lg">
+                    <div class="chat-header clearfix">
+                        <?php
+                        if (is_array($chatListArr) && count($chatListArr) > 0) {
+                            reset($chatListArr);
+                            $chatWith = key($chatListArr);
+                        } else {
+                            $chatWith = "";
+                        }
+                        ?>
+                        <h3>Chat with <span class="chat-with-name"><?php echo $chatWith; ?></span></h3>
+                    </div>
+                    <div class="chat-body">
+                        <div class="cht-lg" style="height: 625px;">
+                            <ul class="cht-lg-list">
+                                <!--<li>loading...</li>-->
+                                <?php
+                                if (is_array($chatListArr) && count($chatListArr) > 0) {
+                                    reset($chatListArr);
+                                    $first_key = key($chatListArr);
+                                    $sql = "SELECT *,DATE(`sent`) as d FROM $tableName WHERE `from` IN ('$first_key',  '" . $session_username . "')AND  `to` IN ('$first_key',  '" . $session_username . "') ORDER BY id ASC";
+                                    $results = $readConnection->fetchAll($sql);
+
+                                    if (is_array($results) && count($results) > 0) {
+                                        foreach ($results as $result) {
+                                            $date = new DateTime($result['d'], new DateTimeZone($storeTimeZone));
+                                            $date->setTimezone(new DateTimeZone("UTC")); //$currVisitorTimezone
+                                            $dateWiseChat[$date->format('Y-m-d')][] = $result;
+                                        }
+
+                                        if (is_array($dateWiseChat) && count($dateWiseChat) > 0) {
+                                            foreach ($dateWiseChat as $key => $date) {
+                                                ?>
+                                                <li>
+                                                    <div class="chat-date"><span><?php echo $key; ?></span></div>
+                                                </li>
+                                                <?php
+                                                foreach ($date as $chat) {
+                                                    $right = ($chat['from'] == $session_username) ? ' class="right"' : '';
+                                                    $date = new DateTime($chat['sent'], new DateTimeZone($storeTimeZone)); //
+                                                    $date->setTimezone(new DateTimeZone("UTC")); //$currVisitorTimezone
+                                                    ?>
+                                                    <li <?php echo $right; ?>>
+                                                        <div class="chat-cont clearfix">
+                                                            <div class="chat-user">
+                                                                <img src="https://www.pixelmarket.net/media/wysiwyg/default_chat_avatar.jpg" alt="image" width="50" height="50" />
+                                                            </div>
+                                                            <div class="chat-desc">
+                                                                <p><?php echo $chat['message']; ?></p>
+                                                                <div class="chat-time"><!--<span data-livestamp="<?php echo $date->format('Y-m-d H:i:s'); ?>"></span>--><span><?php echo $date->format('g:ia m/d/Y'); ?></div>
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                    <?php
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                ?>
+                            </ul>
+                        </div>
+                        <div class="chat-footer">
+                            <div class="chat-msg">
+                                <input type="hidden" id="list_send_msg" value="<?php echo $chatWith; ?>"/>
+                                <textarea name="message" id="" cols="30" rows="10" placeholder="Send Message" onkeydown="javascript:return checkListChatBoxInputKey(event, this);"></textarea>
+                                <input type="submit" name="send" value="send" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script type="text/javascript">
+    jQuery(document).ready(function ($) {
+        $(".chat-listing ul").mCustomScrollbar({
+            setHeight: 715
+        });
+
+        $(".cht-lg").mCustomScrollbar({
+            setHeight: 625
+        });
+        $(".cht-lg").mCustomScrollbar("scrollTo", "bottom", {scrollInertia: 0});
+
+        /*chatListHeartbeat($("#list_send_msg").val());
+         setTimeout('chatListHeartbeat($("#list_send_msg").val());', 200);*/
+    });
+</script>
